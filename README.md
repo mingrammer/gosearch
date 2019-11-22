@@ -25,7 +25,7 @@ gosearch logging zero alloc
 Use `-n` option to see more. (default: 10)
 
 ```
-gosearch -n 20 cli
+gosearch -n 20 redis
 ```
 
 Use `-e` option to search for an exact match.
