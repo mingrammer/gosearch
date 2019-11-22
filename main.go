@@ -61,14 +61,14 @@ func main() {
 	// Search the packages concurrently.
 	pc := make(chan *page, pageN)
 	wg := new(sync.WaitGroup)
-	go func() {
-		wg.Wait()
-		close(pc)
-	}()
 	for n := 1; n < pageN+1; n++ {
 		wg.Add(1)
 		go search(query, n, pc, wg)
 	}
+	go func() {
+		wg.Wait()
+		close(pc)
+	}()
 
 	// Order by sequence.
 	ps := make(pages, 0)
