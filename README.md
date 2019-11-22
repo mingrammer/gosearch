@@ -1,4 +1,4 @@
-GoSearch
+# GoSearch
 
 Search the Go packages for [pkg.go.dev](https://pkg.go.dev/) via command-line. It supports all search options in [Search Help](https://pkg.go.dev/search-help).
 
