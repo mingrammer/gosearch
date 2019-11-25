@@ -45,6 +45,7 @@ gosearch -o json yaml
 Search the mux packages with `gosearch mux`.
 
 ```shell
+$ gosearch mux
 github.com/gorilla/mux (v1.7.3)
 ├ Package mux implements a request router and dispatcher.
 └ Published: Jun 30, 2019 | Imported by: 6513 | License: BSD-3-Clause
@@ -81,4 +82,3 @@ github.com/yinqiwen/gsnova/common/mux (v0.30.0)
 v2ray.com/core/common/mux (v4.19.1+incompatible)
 └ Published: Jun  3, 2019 | Imported by: 24 | License: MIT
 ```
-
