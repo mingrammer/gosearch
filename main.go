@@ -89,6 +89,8 @@ func main() {
 }
 
 func search(query string, seq int, pc chan<- *page, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	baseURL := "https://pkg.go.dev/search"
 	fullURL := fmt.Sprintf("%s?q=%s&page=%d", baseURL, query, seq)
 
@@ -129,7 +131,6 @@ func search(query string, seq int, pc chan<- *page, wg *sync.WaitGroup) {
 		})
 	}
 	pc <- &page{seq, pkgs}
-	wg.Done()
 }
 
 func find(node *html.Node, by cond) []*html.Node {
