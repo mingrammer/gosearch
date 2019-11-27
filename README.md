@@ -13,31 +13,31 @@ go get github.com/mingrammer/gosearch
 Basic search.
 
 ```
-gosearch fastjson
+$ gosearch fastjson
 ```
 
 You can query with multiple search words.
 
 ```
-gosearch logging zero alloc
+$ gosearch logging zero alloc
 ```
 
 Use `-n` option to see more. (default: 10)
 
 ```
-gosearch -n 20 redis
+$ gosearch -n 20 redis
 ```
 
 Use `-e` option to search for an exact match.
 
 ```
-gosearch -e go cloud
+$ gosearch -e go cloud
 ```
 
 Use `-o` option to combine searches. It will search for each word and combine their results.
 
 ```
-gosearch -o json yaml
+$ gosearch -o json yaml
 ```
 
 ## Example
