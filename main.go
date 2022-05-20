@@ -21,6 +21,8 @@ const (
 	snClass = "SearchSnippet-synopsis"
 	scClass = "SearchSnippet-symbolCode"
 	ilClass = "SearchSnippet-infoLabel"
+
+	packageDevHost = "https://pkg.go.dev"
 )
 
 type pkg struct {
@@ -47,6 +49,7 @@ func (p pages) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 func main() {
 	count := flag.Int("n", 10, "the number of packages to search.")
 	symbolMode := flag.Bool("s", false, "symbol search mode, default is package search mode")
+	showURI := flag.Bool("u", false, "print the complete URI to the package or symbol on the console")
 	exact := flag.Bool("e", false, "search for an exact match.")
 	useOR := flag.Bool("o", false, "combine searches. if true, query will be like 'yaml OR json'.")
 
@@ -91,7 +94,7 @@ func main() {
 			if i*perPage+j >= *count {
 				return
 			}
-			prettyPrint(pkg)
+			prettyPrint(pkg, *showURI)
 		}
 	}
 }
@@ -99,9 +102,8 @@ func main() {
 func search(query string, mode string, seq int, pc chan<- *page, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	baseURL := "https://pkg.go.dev/search"
+	baseURL := packageDevHost + "/search"
 	fullURL := fmt.Sprintf("%s?q=%s&m=%s&page=%d", baseURL, query, mode, seq)
-	fmt.Println(fullURL)
 	resp, err := http.Get(fullURL)
 	if err != nil {
 		panic(err)
@@ -244,11 +246,20 @@ func getAttrValue(node *html.Node, attrName string) string {
 	return ""
 }
 
-func prettyPrint(p *pkg) {
+func prettyPrint(p *pkg, showURI bool) {
+
 	if p.theType != "" {
-		fmt.Printf("type %s in %s (%s)\n", cfmt.Sinfo(p.theType), cfmt.Ssuccess(p.repo), cfmt.Sinfo(p.version))
+		theType := p.theType
+		if showURI {
+			theType = packageDevHost + "/" + p.repo + "#" + p.theType
+		}
+		fmt.Printf("type %s in %s (%s)\n", cfmt.Sinfo(theType), cfmt.Ssuccess(p.repo), cfmt.Sinfo(p.version))
 	} else {
-		fmt.Printf("%s (%s)\n", cfmt.Ssuccess(p.repo), cfmt.Sinfo(p.version))
+		repo := p.repo
+		if showURI {
+			repo = packageDevHost + "/" + repo
+		}
+		fmt.Printf("%s (%s)\n", cfmt.Ssuccess(repo), cfmt.Sinfo(p.version))
 	}
 	if p.desc != "" {
 		fmt.Printf("├ %s\n", p.desc)
