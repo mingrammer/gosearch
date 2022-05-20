@@ -28,6 +28,12 @@ Use `-n` option to see more. (default: 10)
 $ gosearch -n 20 redis
 ```
 
+Use `-s` option to search for symbol.
+
+```
+$ gosearch -s mux
+```
+
 Use `-e` option to search for an exact match.
 
 ```

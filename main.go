@@ -17,8 +17,9 @@ const (
 	perPage = 10
 
 	spClass = "SearchSnippet"
-	hdClass = "SearchSnippet-header"
+	hdClass = "SearchSnippet-headerContainer"
 	snClass = "SearchSnippet-synopsis"
+	scClass = "SearchSnippet-symbolCode"
 	ilClass = "SearchSnippet-infoLabel"
 )
 
@@ -29,6 +30,8 @@ type pkg struct {
 	pubDate   string
 	importCnt string
 	license   string
+	theType   string
+	typeDef   string
 }
 
 type page struct {
@@ -43,8 +46,10 @@ func (p pages) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 func main() {
 	count := flag.Int("n", 10, "the number of packages to search.")
+	symbolMode := flag.Bool("s", false, "symbol search mode, default is package search mode")
 	exact := flag.Bool("e", false, "search for an exact match.")
 	useOR := flag.Bool("o", false, "combine searches. if true, query will be like 'yaml OR json'.")
+
 	flag.Parse()
 
 	// Build a query.
@@ -57,13 +62,16 @@ func main() {
 		query = "\"" + query + "\""
 	}
 	pageN := int(math.Ceil(float64(*count) / perPage))
-
+	searchMode := "package"
+	if *symbolMode {
+		searchMode = "symbol"
+	}
 	// Search the packages concurrently.
 	pc := make(chan *page, pageN)
 	wg := new(sync.WaitGroup)
 	for n := 1; n < pageN+1; n++ {
 		wg.Add(1)
-		go search(query, n, pc, wg)
+		go search(query, searchMode, n, pc, wg)
 	}
 	go func() {
 		wg.Wait()
@@ -88,16 +96,17 @@ func main() {
 	}
 }
 
-func search(query string, seq int, pc chan<- *page, wg *sync.WaitGroup) {
+func search(query string, mode string, seq int, pc chan<- *page, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	baseURL := "https://pkg.go.dev/search"
-	fullURL := fmt.Sprintf("%s?q=%s&page=%d", baseURL, query, seq)
-
+	fullURL := fmt.Sprintf("%s?q=%s&m=%s&page=%d", baseURL, query, mode, seq)
+	fmt.Println(fullURL)
 	resp, err := http.Get(fullURL)
 	if err != nil {
 		panic(err)
 	}
+
 	defer resp.Body.Close()
 
 	doc, err := html.Parse(resp.Body)
@@ -106,34 +115,66 @@ func search(query string, seq int, pc chan<- *page, wg *sync.WaitGroup) {
 	}
 
 	pkgs := make([]*pkg, 0)
-	spNodes := find(doc, condHasClass(spClass))
-	for _, spNode := range spNodes {
-		hdNodes := find(spNode, condHasClass(hdClass))
-		pkgRepo := find(hdNodes[0], condValidTxt())[0]
+	spNodes := find(doc, condHasClassName(spClass))
 
-		pkgDesc := ""
-		snNodes := find(spNode, condHasClass(snClass))
-		txtNode := find(snNodes[0], condValidTxt())
-		if len(txtNode) > 0 {
-			pkgDesc = txtNode[0].Data
+	for _, spNode := range spNodes {
+
+		hdContNodes := find(spNode, condHasClassName(hdClass))
+		pkgRepo := ""
+		symbolType := ""
+		if len(hdContNodes) > 0 {
+			pkgAnchorsNodes := find(spNode, condTag("a"))
+			if len(pkgAnchorsNodes) > 0 {
+				hrefAnchor := getAttrValue(pkgAnchorsNodes[0], "href")[1:]
+				pkgRepo = hrefAnchor
+				if mode == "symbol" {
+					pkgAndType := strings.Split(hrefAnchor, "#")
+					pkgRepo = pkgAndType[0]
+					symbolType = pkgAndType[1]
+				}
+			}
 		}
 
-		ilNodes := find(spNode, condHasClass(ilClass))
+		pkgDesc := ""
+		condPkgDescNode := chainConds(condTag("p"), condHasAttrValue("data-test-id", "snippet-synopsis"))
+		snNodes := find(spNode, condPkgDescNode)
+		if len(snNodes) > 0 {
+			txtNode := find(snNodes[0], condValidTxt())
+			if len(txtNode) > 0 {
+				pkgDesc = txtNode[0].Data
+			}
+		}
+		typeDef := ""
+		if mode == "symbol" {
+			typeDefNodes := find(spNode, condHasClassName(scClass))
+			if len(typeDefNodes) > 0 {
+				txtNode := find(typeDefNodes[0], condValidTxt())
+				if len(txtNode) > 0 {
+					typeDef = txtNode[0].Data
+				}
+			}
+		}
+
+		condIlNode := chainConds(condTag("div"), condHasClassName(ilClass))
+		ilNodes := find(spNode, condIlNode)
 		pkgMeta := find(ilNodes[0], condValidTxt())
 
 		pkgs = append(pkgs, &pkg{
-			repo:      strings.TrimSpace(pkgRepo.Data),
+			repo:      strings.TrimSpace(pkgRepo),
 			desc:      strings.TrimSpace(pkgDesc),
-			version:   strings.TrimSpace(pkgMeta[1].Data),
-			pubDate:   strings.TrimSpace(pkgMeta[3].Data),
-			importCnt: strings.TrimSpace(pkgMeta[5].Data),
-			license:   strings.TrimSpace(pkgMeta[7].Data),
+			version:   strings.TrimSpace(pkgMeta[2].Data),
+			pubDate:   strings.TrimSpace(pkgMeta[4].Data),
+			importCnt: strings.TrimSpace(pkgMeta[1].Data),
+			license:   strings.TrimSpace(pkgMeta[5].Data),
+			theType:   strings.TrimSpace(symbolType),
+			typeDef:   strings.TrimSpace(typeDef),
 		})
 	}
 	pc <- &page{seq, pkgs}
 }
 
 func find(node *html.Node, by cond) []*html.Node {
+
 	nodes := make([]*html.Node, 0)
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
 		if by(c) {
@@ -146,14 +187,45 @@ func find(node *html.Node, by cond) []*html.Node {
 
 type cond func(*html.Node) bool
 
-func condHasClass(class string) cond {
+func chainConds(conds ...cond) cond {
+	return func(node *html.Node) bool {
+		matchAll := true
+		for _, by := range conds {
+			matchAll = matchAll && by(node)
+		}
+		return matchAll
+	}
+}
+
+func condHasAttr(attrName string) cond {
 	return func(node *html.Node) bool {
 		for _, attr := range node.Attr {
-			if attr.Key == "class" && attr.Val == class {
+			if attr.Key == attrName {
 				return true
 			}
 		}
 		return false
+	}
+}
+
+func condHasAttrValue(attrName string, attrValue string) cond {
+	return func(node *html.Node) bool {
+		for _, attr := range node.Attr {
+			if attr.Key == attrName && attr.Val == attrValue {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func condHasClassName(class string) cond {
+	return condHasAttrValue("class", class)
+}
+
+func condTag(tagName string) cond {
+	return func(node *html.Node) bool {
+		return strings.ToLower(node.Data) == strings.ToLower(tagName)
 	}
 }
 
@@ -163,10 +235,27 @@ func condValidTxt() cond {
 	}
 }
 
+func getAttrValue(node *html.Node, attrName string) string {
+	for _, attr := range node.Attr {
+		if strings.ToLower(attr.Key) == strings.ToLower(attrName) {
+			return attr.Val
+		}
+	}
+	return ""
+}
+
 func prettyPrint(p *pkg) {
-	fmt.Printf("%s (%s)\n", cfmt.Ssuccess(p.repo), cfmt.Sinfo(p.version))
+	if p.theType != "" {
+		fmt.Printf("type %s in %s (%s)\n", cfmt.Sinfo(p.theType), cfmt.Ssuccess(p.repo), cfmt.Sinfo(p.version))
+	} else {
+		fmt.Printf("%s (%s)\n", cfmt.Ssuccess(p.repo), cfmt.Sinfo(p.version))
+	}
 	if p.desc != "" {
 		fmt.Printf("├ %s\n", p.desc)
 	}
+	if p.typeDef != "" {
+		fmt.Printf("├ Code: %s\n", cfmt.Sinfo(p.typeDef))
+	}
+
 	fmt.Printf("└ Published: %s | Imported by: %s | License: %s\n\n", p.pubDate, p.importCnt, p.license)
 }
