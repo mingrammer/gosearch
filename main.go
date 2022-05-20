@@ -19,6 +19,7 @@ const (
 	spClass = "SearchSnippet"
 	hdClass = "SearchSnippet-headerContainer"
 	snClass = "SearchSnippet-synopsis"
+	skClass = "SearchSnippet-symbolKind"
 	scClass = "SearchSnippet-symbolCode"
 	ilClass = "SearchSnippet-infoLabel"
 
@@ -26,14 +27,15 @@ const (
 )
 
 type pkg struct {
-	repo      string
-	desc      string
-	version   string
-	pubDate   string
-	importCnt string
-	license   string
-	theType   string
-	typeDef   string
+	repo       string
+	desc       string
+	version    string
+	pubDate    string
+	importCnt  string
+	license    string
+	symbol     string
+	symbolKind string
+	symbolDef  string
 }
 
 type page struct {
@@ -123,16 +125,21 @@ func search(query string, mode string, seq int, pc chan<- *page, wg *sync.WaitGr
 
 		hdContNodes := find(spNode, condHasClassName(hdClass))
 		pkgRepo := ""
-		symbolType := ""
+		symbol := ""
+		symbolKind := ""
 		if len(hdContNodes) > 0 {
 			pkgAnchorsNodes := find(spNode, condTag("a"))
 			if len(pkgAnchorsNodes) > 0 {
 				hrefAnchor := getAttrValue(pkgAnchorsNodes[0], "href")[1:]
 				pkgRepo = hrefAnchor
 				if mode == "symbol" {
-					pkgAndType := strings.Split(hrefAnchor, "#")
-					pkgRepo = pkgAndType[0]
-					symbolType = pkgAndType[1]
+					symbolKindsNodes := find(pkgAnchorsNodes[0], condHasClassName(skClass))
+					if len(symbolKindsNodes) > 0 {
+						symbolKind = find(symbolKindsNodes[0], condValidTxt())[0].Data
+					}
+					pkgAndSymbol := strings.Split(hrefAnchor, "#")
+					pkgRepo = pkgAndSymbol[0]
+					symbol = pkgAndSymbol[1]
 				}
 			}
 		}
@@ -146,13 +153,13 @@ func search(query string, mode string, seq int, pc chan<- *page, wg *sync.WaitGr
 				pkgDesc = txtNode[0].Data
 			}
 		}
-		typeDef := ""
+		symbolDef := ""
 		if mode == "symbol" {
-			typeDefNodes := find(spNode, condHasClassName(scClass))
-			if len(typeDefNodes) > 0 {
-				txtNode := find(typeDefNodes[0], condValidTxt())
+			symbolDefNodes := find(spNode, condHasClassName(scClass))
+			if len(symbolDefNodes) > 0 {
+				txtNode := find(symbolDefNodes[0], condValidTxt())
 				if len(txtNode) > 0 {
-					typeDef = txtNode[0].Data
+					symbolDef = txtNode[0].Data
 				}
 			}
 		}
@@ -162,14 +169,15 @@ func search(query string, mode string, seq int, pc chan<- *page, wg *sync.WaitGr
 		pkgMeta := find(ilNodes[0], condValidTxt())
 
 		pkgs = append(pkgs, &pkg{
-			repo:      strings.TrimSpace(pkgRepo),
-			desc:      strings.TrimSpace(pkgDesc),
-			version:   strings.TrimSpace(pkgMeta[2].Data),
-			pubDate:   strings.TrimSpace(pkgMeta[4].Data),
-			importCnt: strings.TrimSpace(pkgMeta[1].Data),
-			license:   strings.TrimSpace(pkgMeta[5].Data),
-			theType:   strings.TrimSpace(symbolType),
-			typeDef:   strings.TrimSpace(typeDef),
+			repo:       strings.TrimSpace(pkgRepo),
+			desc:       strings.TrimSpace(pkgDesc),
+			version:    strings.TrimSpace(pkgMeta[2].Data),
+			pubDate:    strings.TrimSpace(pkgMeta[4].Data),
+			importCnt:  strings.TrimSpace(pkgMeta[1].Data),
+			license:    strings.TrimSpace(pkgMeta[5].Data),
+			symbol:     strings.TrimSpace(symbol),
+			symbolKind: strings.TrimSpace(symbolKind),
+			symbolDef:  strings.TrimSpace(symbolDef),
 		})
 	}
 	pc <- &page{seq, pkgs}
@@ -248,12 +256,12 @@ func getAttrValue(node *html.Node, attrName string) string {
 
 func prettyPrint(p *pkg, showURI bool) {
 
-	if p.theType != "" {
-		theType := p.theType
+	if p.symbol != "" {
+		symbol := p.symbol
 		if showURI {
-			theType = packageDevHost + "/" + p.repo + "#" + p.theType
+			symbol = packageDevHost + "/" + p.repo + "#" + p.symbol
 		}
-		fmt.Printf("type %s in %s (%s)\n", cfmt.Sinfo(theType), cfmt.Ssuccess(p.repo), cfmt.Sinfo(p.version))
+		fmt.Printf("%s %s in %s (%s)\n", p.symbolKind, cfmt.Sinfo(symbol), cfmt.Ssuccess(p.repo), cfmt.Sinfo(p.version))
 	} else {
 		repo := p.repo
 		if showURI {
@@ -264,8 +272,8 @@ func prettyPrint(p *pkg, showURI bool) {
 	if p.desc != "" {
 		fmt.Printf("├ %s\n", p.desc)
 	}
-	if p.typeDef != "" {
-		fmt.Printf("├ Code: %s\n", cfmt.Sinfo(p.typeDef))
+	if p.symbolDef != "" {
+		fmt.Printf("├ Code: %s\n", cfmt.Sinfo(p.symbolDef))
 	}
 
 	fmt.Printf("└ Published: %s | Imported by: %s | License: %s\n\n", p.pubDate, p.importCnt, p.license)
